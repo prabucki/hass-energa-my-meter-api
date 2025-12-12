@@ -37,7 +37,7 @@ class EnergaAPI:
         if not self._meters_data: self._meters_data = await self._fetch_all_meters()
         tz = ZoneInfo("Europe/Warsaw")
         ts = int(datetime.now(tz).replace(hour=0, minute=0, second=0, microsecond=0).timestamp() * 1000)
-        
+
         updated_meters = []
         for meter in self._meters_data:
             m_data = meter.copy()
@@ -58,7 +58,7 @@ class EnergaAPI:
             await self.async_get_data()
             meter = next((m for m in self._meters_data if m["meter_point_id"] == meter_point_id), None)
             if not meter: return {"import": [], "export": []}
-        
+
         tz = ZoneInfo("Europe/Warsaw")
         ts = int(date.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(tz).timestamp() * 1000)
 
@@ -67,10 +67,44 @@ class EnergaAPI:
             result["import"] = await self._fetch_chart(meter["meter_point_id"], meter["obis_plus"], ts)
         if meter.get("obis_minus"):
             result["export"] = await self._fetch_chart(meter["meter_point_id"], meter["obis_minus"], ts)
-        
+
         _LOGGER.debug(f"Historia {date.date()} (ts={ts}): Import={len(result['import'])} pkt, Export={len(result['export'])} pkt")
-        
+
         return result
+
+    async def _fetch_all_meters(self):
+        data = await self._api_get(DATA_ENDPOINT)
+        if not data.get("response"): raise EnergaConnectionError("Empty response")
+        meters_found = []
+        for mp in data["response"].get("meterPoints", []):
+            ag = next((a for a in data["response"].get("agreementPoints", []) if a.get("id") == mp.get("id")), {})
+            if not ag and data["response"].get("agreementPoints"): ag = data["response"]["agreementPoints"][0]
+
+            ppe = ag.get("code") or mp.get("ppe") or mp.get("dev") or "Unknown"
+            serial = mp.get("dev") or mp.get("meterNumber") or "Unknown"
+            c_date = None
+            try:
+                start_ts = ag.get("dealer", {}).get("start")
+                if start_ts: c_date = datetime.fromtimestamp(int(start_ts) / 1000).date()
+            except: pass
+
+
+            meter_obj = {
+                "meter_point_id": mp.get("id"), "ppe": ppe, "meter_serial": serial, "tariff": mp.get("tariff"),
+                "address": ag.get("address"), "contract_date": c_date, "daily_pobor": 0.0, "daily_produkcja": 0.0,
+                "total_plus": 0.0, "total_minus": 0.0, "obis_plus": None, "obis_minus": None
+            }
+
+            # Pobieranie Total z lastMeasurements
+            for m in mp.get("lastMeasurements", []):
+                if "A+" in m.get("zone", ""): meter_obj["total_plus"] = float(m.get("value", 0))
+                if "A-" in m.get("zone", ""): meter_obj["total_minus"] = float(m.get("value", 0))
+
+            for obj in mp.get("meterObjects", []):
+                if obj.get("obis", "").startswith("1-0:1.8.0"): meter_obj["obis_plus"] = obj.get("obis")
+                elif obj.get("obis", "").startswith("1-0:2.8.0"): meter_obj["obis_minus"] = obj.get("obis")
+            meters_found.append(meter_obj)
+        return meters_found
 
 
     async def _fetch_chart(self, meter_id, obis, timestamp):
@@ -90,6 +124,6 @@ class EnergaAPI:
             if resp.status == 401 or resp.status == 403:
                 # Wyrzucamy nasz nowy wyjątek. Coordinator go złapie i spróbuje ponownego logowania.
                 raise EnergaTokenExpiredError(f"API returned {resp.status} for {url}")
-            
+
             resp.raise_for_status()
             return await resp.json()
