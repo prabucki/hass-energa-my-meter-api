@@ -1,4 +1,4 @@
-"""Sensors for Energa Mobile v3.5.5."""
+"""Sensors for Energa Mobile v3.5.6."""
 from datetime import timedelta
 import logging
 import asyncio # <--- DODANY IMPORT ASYNCIO
@@ -44,7 +44,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             # NOWE, CZYSTE SENSORY DO PANELU ENERGII
             ("import_total", "Energa Pobór – Licznik całkowity", UnitOfEnergy.KILO_WATT_HOUR, SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING, "mdi:transmission-tower"),
             ("export_total", "Energa Produkcja – Licznik całkowity", UnitOfEnergy.KILO_WATT_HOUR, SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING, "mdi:solar-power"),
-            
+
             # Liczniki Total (Odczyt z API - Twoje "święte" liczniki)
             ("total_plus", "Stan Licznika - Pobór", UnitOfEnergy.KILO_WATT_HOUR, SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING, "mdi:counter"),
             ("total_minus", "Stan Licznika - Produkcja", UnitOfEnergy.KILO_WATT_HOUR, SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING, "mdi:counter"),
@@ -94,13 +94,13 @@ class EnergaDataCoordinator(DataUpdateCoordinator):
                 self.update_interval = timedelta(hours=1)
 
             return data
-        
+
         # DODANO EnergaTokenExpiredError do obsługi 401/403 z API
         except (EnergaConnectionError, asyncio.TimeoutError, EnergaTokenExpiredError) as err:
             self._errors += 1
             delay = 15 if self._errors > 2 else (5 if self._errors > 1 else 2)
             self.update_interval = timedelta(minutes=delay)
-            
+
             # Jeśli to problem z tokenem (401/403), spróbujemy się ponownie zalogować
             if isinstance(err, EnergaTokenExpiredError):
                 _LOGGER.warning("Energa Token wygasł. Spróbuję ponownego logowania.")
@@ -108,7 +108,7 @@ class EnergaDataCoordinator(DataUpdateCoordinator):
                     await self.api.async_login()
                 except Exception:
                     pass # Jeśli logowanie padnie, rzucimy UpdateFailed
-            
+
             # Jeśli login się nie powiódł, rzucamy UpdateFailed i Coordinator będzie retryował
             raise UpdateFailed(f"API ERROR: {err}") from err
 
@@ -138,12 +138,12 @@ class EnergaSensor(CoordinatorEntity, SensorEntity, RestoreEntity):
         self._attr_state_class = state_class
         self._attr_icon = icon
         self._restored_value = None
-        
+
         self._attr_unique_id = f"energa_{key}_{meter_id}"
 
         if unit is None:
             self._attr_entity_category = EntityCategory.DIAGNOSTIC
-            
+
     async def async_added_to_hass(self):
         await super().async_added_to_hass()
         if (last_state := await self.async_get_last_state()) is not None:
@@ -168,17 +168,17 @@ class EnergaSensor(CoordinatorEntity, SensorEntity, RestoreEntity):
                     "import_total": "total_plus",
                     "export_total": "total_minus",
                 }
-                
+
                 key_to_fetch = live_map.get(self._data_key, self._data_key)
-                
+
                 value = meter.get(key_to_fetch)
                 if isinstance(value, (int, float)):
                     self._restored_value = float(value)
                     return self._restored_value
-        
+
         if self._restored_value is not None:
             return self._restored_value
-        
+
         return None
 
     @property
@@ -197,5 +197,5 @@ class EnergaSensor(CoordinatorEntity, SensorEntity, RestoreEntity):
             manufacturer="Energa-Operator",
             model=f"PPE {meter.get('ppe','')}",
             configuration_url="https://mojlicznik.energa-operator.pl",
-            sw_version="3.5.5",
+            sw_version="3.5.6",
         )

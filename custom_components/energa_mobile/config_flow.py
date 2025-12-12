@@ -1,4 +1,4 @@
-"""Config flow for Energa Mobile integration v3.5.5."""
+"""Config flow for Energa Mobile integration v3.5.6."""
 import logging
 import voluptuous as vol
 from datetime import datetime
@@ -85,7 +85,7 @@ class EnergaOptionsFlow(config_entries.OptionsFlow):
         if first_meter.get("contract_date"):
             contract_str = str(first_meter["contract_date"])
             default_date = str(first_meter["contract_date"])
-        
+
         if user_input is not None:
             start_date = datetime.strptime(user_input["start_date"], "%Y-%m-%d")
             diff = (datetime.now() - start_date).days
